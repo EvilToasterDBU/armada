@@ -1,0 +1,4 @@
+Justfile.local
+output/
+_build*
+cosign.key

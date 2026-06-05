@@ -1,0 +1,29 @@
+#!/bin/bash
+set -euo pipefail
+
+eval "$(/usr/libexec/armada/device-env)"
+
+pocket_evo_xbox_mode() {
+    local serial_device=/dev/ttyHS0
+
+    if [[ ! -e "$serial_device" ]]; then
+        echo "device-quirks: $serial_device not present, skipping Pocket EVO Xbox mode"
+        return 0
+    fi
+
+    stty -F "$serial_device" 115200 -clocal -opost -isig -icanon -echo
+    printf '\xe7\x55\x05\x01\x00\x00\x00\x00\x00\x5b\xed' >"$serial_device"
+    sleep 0.1
+    printf '\x35\x35\x30\x35\x30\x31\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30' >"$serial_device"
+    sleep 0.1
+
+    echo "device-quirks: Pocket EVO MCU switched to Xbox 360 mode"
+}
+
+case "${ARMADA_GAMEPAD_QUIRK:-none}" in
+    pocket-evo-xbox)
+        pocket_evo_xbox_mode
+        ;;
+    none)
+        ;;
+esac

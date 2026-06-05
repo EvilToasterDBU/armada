@@ -1,0 +1,434 @@
+#!/usr/bin/bash
+set -euo pipefail
+
+DEVICE="${ARMADA_INTERNAL_DEVICE:-/dev/sda}"
+ESP_GUID="c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+ESP_MIB=512
+BOOT_MIB=1024
+ROOT_MIN_MIB=$((32 * 1024))
+REFORMAT_ROOT=0
+BTRFS_OPTS="noatime,compress=zstd:1,discard=async,space_cache=v2"
+ROOT_LAYOUT=legacy
+
+need_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: must run as root" >&2
+        exit 1
+    fi
+}
+
+need_cmds() {
+    local missing=0
+    for cmd in blkid btrfs findmnt jq mkfs.btrfs mkfs.ext4 mkfs.vfat ostree parted partprobe sgdisk udevadm; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            echo "ERROR: missing required command: $cmd" >&2
+            missing=1
+        fi
+    done
+    (( missing == 0 )) || exit 1
+}
+
+confirm() {
+    local prompt="$1"
+    local answer
+    read -rp "$prompt [y/N]: " answer
+    [[ $answer =~ ^[Yy]$ ]]
+}
+
+root_source() {
+    local source
+    source=$(findmnt -no SOURCE /sysroot 2>/dev/null || findmnt -no SOURCE /)
+    readlink -f "$source"
+}
+
+resolve_partlabel() {
+    local label="$1"
+    local matches=()
+    mapfile -t matches < <(blkid -t "PARTLABEL=${label}" -o device 2>/dev/null || true)
+    if [[ ${#matches[@]} -ne 1 || ! -b ${matches[0]} ]]; then
+        echo "ERROR: expected exactly one partition with PARTLABEL=${label}" >&2
+        exit 1
+    fi
+    printf '%s\n' "${matches[0]}"
+}
+
+partition_names() {
+    parted -m -s "$DEVICE" print | tail -n +2 | cut -d: -f6
+}
+
+detect_mode() {
+    local name
+    has_rocknix=0
+    has_armada_boot=0
+    has_armada_root=0
+    has_storage=0
+
+    while IFS= read -r name; do
+        case "$name" in
+            ROCKNIX) has_rocknix=1 ;;
+            ARMADA_BOOT) has_armada_boot=1 ;;
+            ARMADA_ROOT) has_armada_root=1 ;;
+            STORAGE) has_storage=1 ;;
+        esac
+    done < <(partition_names)
+
+    if (( has_rocknix && has_armada_boot && has_armada_root )); then
+        echo reinstall
+    elif (( has_rocknix || has_armada_boot || has_armada_root || has_storage )); then
+        echo partial
+    else
+        echo fresh
+    fi
+}
+
+find_userdata() {
+    mapfile -t ud_line < <(parted -m -s "$DEVICE" unit B print | grep ':userdata:' || true)
+    if [[ ${#ud_line[@]} -ne 1 ]]; then
+        echo "ERROR: could not uniquely find userdata partition on $DEVICE" >&2
+        parted -s "$DEVICE" print >&2
+        exit 1
+    fi
+
+    IFS=':' read -r UD_NUM UD_STARTB UD_ENDB _ <<< "${ud_line[0]}"
+    UD_START=${UD_STARTB%B}
+    UD_END=${UD_ENDB%B}
+    UD_PART="${DEVICE}${UD_NUM}"
+    UD_START_MIB=$(( (UD_START + 1048575) / 1048576 ))
+    UD_END_MIB=$(( UD_END / 1048576 ))
+    UD_ORIG_GIB=$(( (UD_END_MIB - UD_START_MIB) / 1024 ))
+}
+
+choose_userdata_size() {
+    local max_gib ud_gib
+    local reserve_mib=$((ESP_MIB + BOOT_MIB + ROOT_MIN_MIB + 64))
+    MAX_NEW_UD_MIB=$((UD_END_MIB - UD_START_MIB - reserve_mib))
+    MIN_NEW_UD_MIB=1024
+
+    if (( MAX_NEW_UD_MIB < MIN_NEW_UD_MIB )); then
+        echo "ERROR: not enough userdata space to install armada; need about ${reserve_mib} MiB" >&2
+        exit 1
+    fi
+
+    max_gib=$((MAX_NEW_UD_MIB / 1024))
+    while :; do
+        read -rp "New Android userdata size in GiB [default 8, max ${max_gib}]: " ud_gib
+        ud_gib=${ud_gib:-8}
+        if ! [[ $ud_gib =~ ^[0-9]+$ ]]; then
+            echo "  enter an integer"
+            continue
+        fi
+        ud_mib=$((ud_gib * 1024))
+        if (( ud_mib < MIN_NEW_UD_MIB || ud_mib > MAX_NEW_UD_MIB )); then
+            echo "  out of range: 1 .. ${max_gib} GiB"
+            continue
+        fi
+        break
+    done
+}
+
+create_partitions() {
+    local new_ud_end_mib esp_start_mib esp_end_mib boot_start_mib boot_end_mib root_start_mib
+    local esp_num boot_num root_num
+
+    new_ud_end_mib=$((UD_START_MIB + ud_mib))
+    esp_start_mib=$new_ud_end_mib
+    esp_end_mib=$((esp_start_mib + ESP_MIB))
+    boot_start_mib=$esp_end_mib
+    boot_end_mib=$((boot_start_mib + BOOT_MIB))
+    root_start_mib=$boot_end_mib
+
+    cat <<EOF
+
+Plan:
+  Android userdata: ${UD_START_MIB} .. ${new_ud_end_mib} MiB (${ud_gib} GiB, will be reset)
+  ROCKNIX ESP:      ${esp_start_mib} .. ${esp_end_mib} MiB
+  ARMADA_BOOT:      ${boot_start_mib} .. ${boot_end_mib} MiB
+  ARMADA_ROOT:      ${root_start_mib} .. ${UD_END_MIB} MiB
+
+EOF
+
+    confirm "Proceed with destructive partition changes?" || { echo "Aborted."; exit 0; }
+
+    if findmnt -n "$UD_PART" >/dev/null 2>&1; then
+        umount "$UD_PART"
+    fi
+
+    parted -s "$DEVICE" rm "$UD_NUM"
+    parted -a optimal -s "$DEVICE" mkpart primary ext4 "${UD_START_MIB}MiB" "${new_ud_end_mib}MiB"
+    parted -s "$DEVICE" name "$UD_NUM" userdata
+
+    esp_num=$((UD_NUM + 1))
+    boot_num=$((UD_NUM + 2))
+    root_num=$((UD_NUM + 3))
+
+    parted -a optimal -s "$DEVICE" mkpart primary fat32 "${esp_start_mib}MiB" "${esp_end_mib}MiB"
+    parted -s "$DEVICE" name "$esp_num" ROCKNIX
+    parted -s "$DEVICE" set "$esp_num" boot on
+    sgdisk --typecode="${esp_num}:${ESP_GUID}" "$DEVICE" >/dev/null
+
+    parted -a optimal -s "$DEVICE" mkpart primary ext4 "${boot_start_mib}MiB" "${boot_end_mib}MiB"
+    parted -s "$DEVICE" name "$boot_num" ARMADA_BOOT
+
+    parted -a optimal -s "$DEVICE" mkpart primary btrfs "${root_start_mib}MiB" 100%
+    parted -s "$DEVICE" name "$root_num" ARMADA_ROOT
+
+    partprobe "$DEVICE" || true
+    udevadm settle
+
+    ESP_PART="${DEVICE}${esp_num}"
+    BOOT_PART="${DEVICE}${boot_num}"
+    ROOT_PART="${DEVICE}${root_num}"
+    for part in "$UD_PART" "$ESP_PART" "$BOOT_PART" "$ROOT_PART"; do
+        [[ -b $part ]] || { echo "ERROR: $part did not appear after partitioning" >&2; exit 1; }
+    done
+
+    dd if=/dev/zero of="$UD_PART" bs=1M count=8 status=none
+}
+
+base_kargs() {
+    local file
+    for file in /usr/lib/bootc/kargs.d/*.toml; do
+        [[ -f $file ]] || continue
+        sed -n '/^kargs = \[/,/^\]/{s/^[[:space:]]*"\([^"]*\)",\?/\1/p}' "$file"
+    done
+}
+
+copy_bootloader_files() {
+    if command -v bootupctl >/dev/null 2>&1; then
+        bootupctl backend install --filesystem "$TARGET" "$TARGET" || true
+    fi
+
+    mkdir -p "$TARGET/boot/efi/EFI"
+    if [[ -d /boot/efi/EFI/BOOT ]]; then
+        cp -a /boot/efi/EFI/BOOT "$TARGET/boot/efi/EFI/"
+    fi
+    if [[ -d /boot/efi/EFI/fedora ]]; then
+        cp -a /boot/efi/EFI/fedora "$TARGET/boot/efi/EFI/"
+    fi
+    if [[ -d /boot/grub2 ]]; then
+        cp -a /boot/grub2 "$TARGET/boot/"
+    fi
+
+    mkdir -p "$TARGET/boot/efi/EFI/fedora" "$TARGET/boot/grub2"
+    printf 'set BOOT_UUID="%s"\n' "$BOOT_UUID" > "$TARGET/boot/efi/EFI/fedora/bootuuid.cfg"
+    printf 'set BOOT_UUID="%s"\n' "$BOOT_UUID" > "$TARGET/boot/grub2/bootuuid.cfg"
+}
+
+write_fstab() {
+    local deploy_dir
+    deploy_dir=$(find "$TARGET/ostree/deploy/default/deploy" -mindepth 1 -maxdepth 1 -type d -name "${commit}.*" | sort | tail -n1)
+    [[ -n $deploy_dir ]] || { echo "ERROR: could not find ostree deploy dir" >&2; exit 1; }
+    mkdir -p "$deploy_dir/etc"
+    printf 'UUID=%s /boot auto ro 0 0\n' "$BOOT_UUID" > "$deploy_dir/etc/fstab"
+    if [[ $ROOT_LAYOUT == subvol ]]; then
+        printf 'UUID=%s /var btrfs %s,subvol=var 0 0\n' "$ROOT_UUID" "$BTRFS_OPTS" >> "$deploy_dir/etc/fstab"
+        printf 'UUID=%s /var/home btrfs %s,subvol=home 0 0\n' "$ROOT_UUID" "$BTRFS_OPTS" >> "$deploy_dir/etc/fstab"
+    fi
+}
+
+rewrite_bls() {
+    local entry boot_dir vmlinuz initramfs kernel_version ostree_arg options dtb karg
+    entry=$(find "$TARGET/boot/loader/entries" -maxdepth 1 -name '*.conf' | sort | head -n1)
+    [[ -n $entry ]] || { echo "ERROR: no BLS entry created" >&2; exit 1; }
+
+    ostree_arg=$(grep -o 'ostree=[^ ]*' "$entry" | head -n1 || true)
+    [[ -n $ostree_arg ]] || { echo "ERROR: BLS entry missing ostree= option" >&2; exit 1; }
+
+    boot_dir=$(find "$TARGET/boot/ostree" -mindepth 1 -maxdepth 1 -type d -name 'default-*' | sort | head -n1)
+    [[ -n $boot_dir ]] || { echo "ERROR: no /boot/ostree deployment found" >&2; exit 1; }
+
+    vmlinuz=$(find "$boot_dir" -maxdepth 1 -name 'vmlinuz-*' -printf '%f\n' | sort | head -n1)
+    initramfs=$(find "$boot_dir" -maxdepth 1 -name 'initramfs-*.img' -printf '%f\n' | sort | head -n1)
+    [[ -n $vmlinuz && -n $initramfs ]] || { echo "ERROR: deployment missing kernel/initramfs" >&2; exit 1; }
+
+    kernel_version=${vmlinuz#vmlinuz-}
+    options="root=UUID=${ROOT_UUID} rw boot=UUID=${BOOT_UUID}"
+    while IFS= read -r karg; do
+        if [[ $ROOT_LAYOUT == subvol && $karg == rootflags=* ]]; then
+            continue
+        fi
+        options="${options} ${karg}"
+    done < <(base_kargs)
+    if [[ $ROOT_LAYOUT == subvol ]]; then
+        options="${options} rootflags=subvol=root,${BTRFS_OPTS}"
+    fi
+    options="${options} ${ostree_arg}"
+
+    dtb="/boot/ostree/${boot_dir##*/}/dtb/qcom/qcs8550-ayaneo-pocketevo.dtb"
+
+    cat > "$entry" <<EOF
+title Armada
+version 1
+options ${options}
+linux /boot/ostree/${boot_dir##*/}/${vmlinuz}
+initrd /boot/ostree/${boot_dir##*/}/${initramfs}
+devicetree ${dtb}
+EOF
+}
+
+root_has_subvol_layout() {
+    local tmp
+    tmp=$(mktemp -d -t armada-btrfs.XXXXXX)
+    if ! mount -o subvolid=5 "$ROOT_PART" "$tmp"; then
+        rmdir "$tmp"
+        return 1
+    fi
+    [[ -d "$tmp/root" && -d "$tmp/var" && -d "$tmp/home" ]]
+    local result=$?
+    umount "$tmp"
+    rmdir "$tmp"
+    return "$result"
+}
+
+format_root() {
+    local tmp
+    mkfs.btrfs -f -L root "$ROOT_PART" >/dev/null
+    tmp=$(mktemp -d -t armada-root.XXXXXX)
+    mount "$ROOT_PART" "$tmp"
+    btrfs subvolume create "$tmp/root" >/dev/null
+    btrfs subvolume create "$tmp/var" >/dev/null
+    btrfs subvolume create "$tmp/home" >/dev/null
+    umount "$tmp"
+    rmdir "$tmp"
+    ROOT_LAYOUT=subvol
+}
+
+mount_root() {
+    if [[ $ROOT_LAYOUT == subvol ]]; then
+        mount -o "${BTRFS_OPTS},subvol=root" "$ROOT_PART" "$TARGET"
+        mkdir -p "$TARGET/var"
+        mount -o "${BTRFS_OPTS},subvol=var" "$ROOT_PART" "$TARGET/var"
+        mkdir -p "$TARGET/var/home"
+        mount -o "${BTRFS_OPTS},subvol=home" "$ROOT_PART" "$TARGET/var/home"
+    else
+        mount -o "$BTRFS_OPTS" "$ROOT_PART" "$TARGET"
+    fi
+}
+
+deploy_to_internal() {
+    local commit
+
+    for part in "$ESP_PART" "$BOOT_PART" "$ROOT_PART"; do
+        if findmnt -n "$part" >/dev/null 2>&1; then
+            umount "$part"
+        fi
+    done
+
+    mkfs.vfat -F 32 -n ROCKNIX "$ESP_PART" >/dev/null
+    mkfs.ext4 -F -L boot "$BOOT_PART" >/dev/null
+    if (( REFORMAT_ROOT )); then
+        format_root
+    elif [[ $(blkid -s TYPE -o value "$ROOT_PART") != btrfs ]]; then
+        echo "ERROR: existing ARMADA_ROOT is not btrfs; refusing to preserve it" >&2
+        exit 1
+    elif root_has_subvol_layout; then
+        ROOT_LAYOUT=subvol
+    else
+        ROOT_LAYOUT=legacy
+    fi
+
+    ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+    BOOT_UUID=$(blkid -s UUID -o value "$BOOT_PART")
+
+    TARGET=$(mktemp -d -t armada-install.XXXXXX)
+    trap 'umount -R "$TARGET" 2>/dev/null || true; rmdir "$TARGET" 2>/dev/null || true' EXIT
+
+    mount_root
+    if (( REFORMAT_ROOT )); then
+        ostree admin init-fs --modern "$TARGET"
+    elif [[ ! -d "$TARGET/ostree/repo" ]]; then
+        echo "ERROR: existing ARMADA_ROOT has no ostree repo; refusing to preserve unknown data" >&2
+        exit 1
+    fi
+
+    mkdir -p "$TARGET/boot"
+    mount "$BOOT_PART" "$TARGET/boot"
+    mkdir -p "$TARGET/boot/efi"
+    mount "$ESP_PART" "$TARGET/boot/efi"
+
+    if (( REFORMAT_ROOT )); then
+        ostree admin os-init --sysroot="$TARGET" default
+    fi
+    commit=$(ostree admin status --json | jq -r '.deployments[] | select(.booted) | .checksum' | head -n1)
+    [[ -n $commit && $commit != null ]] || { echo "ERROR: could not determine booted ostree commit" >&2; exit 1; }
+
+    ostree pull-local --repo="$TARGET/ostree/repo" /sysroot/ostree/repo "$commit"
+    ostree admin deploy --sysroot="$TARGET" --os=default "$commit"
+
+    write_fstab
+    copy_bootloader_files
+    rewrite_bls
+    sync
+}
+
+need_root
+need_cmds
+
+if [[ ! -b $DEVICE ]]; then
+    echo "ERROR: internal storage device $DEVICE not found" >&2
+    exit 1
+fi
+
+case "$(root_source)" in
+    /dev/sda*)
+        echo "ERROR: already booted from internal storage; refusing to install over self" >&2
+        exit 1
+        ;;
+esac
+
+mode=$(detect_mode)
+case "$mode" in
+    partial)
+        echo "ERROR: found partial or non-Armada internal Linux partition layout" >&2
+        echo "ROCKNIX=$has_rocknix ARMADA_BOOT=$has_armada_boot ARMADA_ROOT=$has_armada_root STORAGE=$has_storage" >&2
+        exit 1
+        ;;
+    reinstall)
+        ESP_PART=$(resolve_partlabel ROCKNIX)
+        BOOT_PART=$(resolve_partlabel ARMADA_BOOT)
+        ROOT_PART=$(resolve_partlabel ARMADA_ROOT)
+        cat <<EOF
+
+Existing Armada install detected:
+  ESP   $ESP_PART
+  BOOT  $BOOT_PART
+  ROOT  $ROOT_PART
+
+This will reformat those Armada partitions and reinstall the running image.
+User data under /var/home will be preserved.
+Android userdata will not be resized.
+
+EOF
+        confirm "Reinstall Armada to the existing internal partitions?" || { echo "Aborted."; exit 0; }
+        REFORMAT_ROOT=0
+        ;;
+    fresh)
+        find_userdata
+        cat <<EOF
+
+No internal Armada install was found.
+
+Current Android userdata: ${UD_ORIG_GIB} GiB (${UD_START_MIB}MiB .. ${UD_END_MIB}MiB)
+
+Fresh install will shrink Android userdata, wipe Android user data, create
+ROCKNIX/ARMADA_BOOT/ARMADA_ROOT, and install the running Armada image.
+
+After install, internal storage boots before SD. Recovery from a broken
+internal install may require a PC and: fastboot erase ROCKNIX
+
+EOF
+        confirm "Resize Android userdata and install Armada?" || { echo "Aborted."; exit 0; }
+        choose_userdata_size
+        create_partitions
+        REFORMAT_ROOT=1
+        ;;
+esac
+
+deploy_to_internal
+
+cat <<EOF
+
+Install complete.
+Power off, remove the SD card, then power on.
+
+EOF

@@ -1,0 +1,127 @@
+#!/bin/bash
+# Fake suspend for SM8550; real S3 hangs.
+set -uo pipefail
+
+STATE_FLAG="/run/armada/fake-suspend.active"
+SAVE_DIR="/run/armada/fake-suspend"
+LOG_TAG="armada-fake-suspend"
+
+log() { logger -t "$LOG_TAG" -- "$*"; echo "$LOG_TAG: $*" >&2; }
+
+SESSION_USER="${ARMADA_SESSION_USER:-armada}"
+SESSION_UID="$(id -u "$SESSION_USER" 2>/dev/null || echo 1000)"
+SESSION_RUNTIME="/run/user/${SESSION_UID}"
+
+as_session() {
+    local s b sock=""
+    for s in "${SESSION_RUNTIME}"/gamescope-*; do
+        [[ -S "$s" ]] || continue
+        b="$(basename "$s")"
+        # gamescope-N, not the -ei input socket.
+        [[ "$b" =~ ^gamescope-[0-9]+$ ]] && { sock="$b"; break; }
+    done
+    # A wedged gamescope must not hang suspend/resume.
+    timeout 8 runuser -u "$SESSION_USER" -- env \
+        XDG_RUNTIME_DIR="$SESSION_RUNTIME" \
+        ${sock:+GAMESCOPE_WAYLAND_DISPLAY="$sock"} \
+        ${sock:+WAYLAND_DISPLAY="$sock"} \
+        "$@"
+}
+
+# Non-DRM-master fallback.
+display_off() {
+    if as_session gamescopectl drm_sleep_internal_screen 1; then
+        log "display off (gamescope)"
+    else
+        log "gamescopectl failed -> bl_power fallback"
+        for bl in /sys/class/backlight/*/bl_power; do [[ -w "$bl" ]] && echo 4 > "$bl" 2>/dev/null || true; done
+    fi
+}
+display_on() {
+    if as_session gamescopectl drm_sleep_internal_screen 0; then
+        log "display on (gamescope)"
+    else
+        log "gamescopectl failed -> bl_power fallback"
+        for bl in /sys/class/backlight/*/bl_power; do [[ -w "$bl" ]] && echo 0 > "$bl" 2>/dev/null || true; done
+    fi
+}
+
+mute_audio()   { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 1 2>/dev/null || true; }
+unmute_audio() { as_session wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true; }
+
+# EBUSY on InputPlumber source nodes is fine.
+INPUT_WHITELIST='pmic_pwrkey'
+
+block_input() {
+    local dev name
+    for dev in /dev/input/event*; do
+        [[ -e "$dev" ]] || continue
+        name="$(cat "/sys/class/input/$(basename "$dev")/device/name" 2>/dev/null)" || continue
+        echo "$name" | grep -qE "^(${INPUT_WHITELIST})$" && continue
+        evtest --grab "$dev" >/dev/null 2>&1 &
+    done
+}
+unblock_input() { pkill -9 -f 'evtest --grab' 2>/dev/null || true; }
+
+# Values are the 15-char /proc comm.
+SESSION_KEEP_COMMS='gamescope-wl|gamescope-sessi|Xwayland|mangoapp|steam_notif_dae'
+
+session_procs_file() {
+    local gspid cg
+    gspid="$(pgrep -f 'bin/gamescope -W' | head -1)"
+    [[ -n "$gspid" ]] || return 1
+    cg="$(awk -F: '/0::/{print $3}' "/proc/${gspid}/cgroup" 2>/dev/null)"
+    [[ -n "$cg" ]] || return 1
+    echo "/sys/fs/cgroup${cg}/cgroup.procs"
+}
+
+freeze_processes() {
+    local procs p c
+    procs="$(session_procs_file)" || { log "no session cgroup; skipping freeze"; return; }
+    [[ -r "$procs" ]] || { log "session procs unreadable; skipping freeze"; return; }
+    : > "$SAVE_DIR/frozen"
+    for p in $(cat "$procs"); do
+        [[ "$p" == "$$" ]] && continue
+        c="$(cat "/proc/${p}/comm" 2>/dev/null)" || continue
+        echo "$c" | grep -qE "^(${SESSION_KEEP_COMMS})$" && continue
+        kill -STOP "$p" 2>/dev/null && echo "$p" >> "$SAVE_DIR/frozen"
+    done
+    log "froze $(wc -l < "$SAVE_DIR/frozen" 2>/dev/null || echo 0) processes"
+}
+unfreeze_processes() {
+    if [[ -f "$SAVE_DIR/frozen" ]]; then
+        local p; for p in $(cat "$SAVE_DIR/frozen"); do kill -CONT "$p" 2>/dev/null || true; done
+    fi
+    kill -CONT -1 2>/dev/null || true
+}
+
+do_suspend() {
+    log "entering fake suspend"
+    mkdir -p "$SAVE_DIR"
+    touch "$STATE_FLAG"
+    mute_audio
+    block_input
+    display_off
+    freeze_processes
+    /usr/libexec/armada/power-control suspend
+    pkill -STOP -f '/usr/libexec/armada/game-watch' 2>/dev/null || true
+}
+do_resume() {
+    log "leaving fake suspend"
+    /usr/libexec/armada/power-control resume
+    pkill -CONT -f '/usr/libexec/armada/game-watch' 2>/dev/null || true
+    unfreeze_processes
+    display_on
+    unblock_input
+    unmute_audio
+    rm -f "$STATE_FLAG"
+    rm -rf "$SAVE_DIR"
+}
+
+case "${1:-toggle}" in
+    toggle|power)  if [[ -f "$STATE_FLAG" ]]; then do_resume; else do_suspend; fi ;;
+    sleep|suspend) [[ -f "$STATE_FLAG" ]] || do_suspend ;;
+    wake|resume)   [[ -f "$STATE_FLAG" ]] && do_resume ;;
+    status)        [[ -f "$STATE_FLAG" ]] && echo "suspended" || echo "awake" ;;
+    *) echo "Usage: $0 {toggle|sleep|wake|status}" >&2; exit 2 ;;
+esac

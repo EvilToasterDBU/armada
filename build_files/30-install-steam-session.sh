@@ -1,0 +1,109 @@
+#!/bin/bash
+set -euxo pipefail
+
+# Patched Turnip includes the Mesa #14656 VM_BIND fix.
+dnf5 -y install --setopt=install_weak_deps=False /ctx/vendor/mesa/mesa-*.fc44.armada.*.rpm
+
+# Patched mangohud: Adreno GPU load/clock/temp for mainline drm/msm (msm_dpu).
+dnf5 -y install --setopt=install_weak_deps=False /ctx/vendor/mangohud/mangohud-*.fc44.armada.*.rpm
+
+dnf5 -y install --setopt=install_weak_deps=False \
+    gamescope \
+    vulkan-loader \
+    vulkan-tools \
+    gamemode \
+    tuned \
+    gtk2 \
+    openal-soft \
+    xorg-x11-server-Xwayland \
+    xorg-x11-server-Xvfb
+
+# armada-gamescope carries ROCKNIX's --use-rotation-shader patch.
+dnf5 -y install --setopt=install_weak_deps=False /ctx/vendor/gamescope/gamescope-[0-9]*.aarch64.rpm
+
+# Avoid gamescope-session-ogui-steam/-powerstation; Terra's aarch64 deps are broken.
+dnf5 -y install --setopt=install_weak_deps=False --enable-repo=terra \
+    gamescope-session \
+    inputplumber \
+    steam-notif-daemon
+
+# ROCKNIX's --use-rotation-shader patch makes this a no-arg flag.
+if ! grep -q 'USE_ROTATION_SHADER_OPTION="--use-rotation-shader $USE_ROTATION_SHADER"' \
+    /usr/share/gamescope-session-plus/gamescope-session-plus; then
+    echo "ERROR: gamescope-session-plus rotation-shader hook changed; inspect before patching" >&2
+    exit 1
+fi
+sed -i \
+    's/USE_ROTATION_SHADER_OPTION="--use-rotation-shader $USE_ROTATION_SHADER"/USE_ROTATION_SHADER_OPTION="--use-rotation-shader"/' \
+    /usr/share/gamescope-session-plus/gamescope-session-plus
+
+# Avoid xtrace spam during every game-mode startup.
+sed -i '/^set -x$/d' /usr/share/gamescope-session-plus/gamescope-session-plus
+
+# First gamescope startup can exceed Terra's 5s socket wait on SD.
+sed -i \
+    's/read -r -t 5 response_x_display response_wl_display/read -r -t 15 response_x_display response_wl_display/' \
+    /usr/share/gamescope-session-plus/gamescope-session-plus
+
+# Fedora's FEX lacks thunks.
+dnf5 -y install --setopt=install_weak_deps=False \
+    fex-emu-rootfs-fedora \
+    erofs-fuse \
+    erofs-utils \
+    squashfuse \
+    squashfs-tools
+dnf5 -y install --setopt=install_weak_deps=False /ctx/vendor/fex/fex-emu-*.rpm
+
+# /usr/share config stays user-overridable; ~/.fex-emu would mask it.
+mkdir -p /usr/share/fex-emu
+# Host thunks live in Fedora's lib64 path.
+cat > /usr/share/fex-emu/Config.json <<'EOF'
+{
+  "Config": {
+    "RootFS": "default.erofs",
+    "X87ReducedPrecision": "1",
+    "ThunkHostLibs": "/usr/lib64/fex-emu/HostThunks",
+    "ThunkGuestLibs": "/usr/share/fex-emu/GuestThunks"
+  },
+  "ThunksDB": {
+    "Vulkan": 1,
+    "GL": 1,
+    "drm": 1,
+    "WaylandClient": 1,
+    "asound": 1
+  }
+}
+EOF
+
+# Bypass Terra's i686-only steam dependency; we launch native ARM Steam.
+mkdir -p /tmp/gss-rpm
+dnf5 download --enable-repo=terra --destdir=/tmp/gss-rpm gamescope-session-steam
+rpm -ivh --nodeps /tmp/gss-rpm/gamescope-session-steam-*.rpm
+rm -rf /tmp/gss-rpm
+
+STEAM_BOOTSTRAP_HOME=/var/home/armada
+STEAM_HOME="${STEAM_BOOTSTRAP_HOME}/.local/share/Steam"
+
+STEAM_BOOTSTRAP_HOME="${STEAM_BOOTSTRAP_HOME}" bash /ctx/build_files/generate-steam-bootstrap.sh
+rm -f /etc/steamos-oobe-image
+
+PROTON_VER="11.0-20260520-slr"
+PROTON_NAME="proton-cachyos-${PROTON_VER}-arm64"
+PROTON_TAR="${PROTON_NAME}.tar.xz"
+PROTON_URL="https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_VER}/${PROTON_TAR}"
+PROTON_SHA512_URL="https://github.com/CachyOS/proton-cachyos/releases/download/cachyos-${PROTON_VER}/${PROTON_NAME}.sha512sum"
+
+curl -fsSL -o "/tmp/${PROTON_TAR}" "${PROTON_URL}"
+curl -fsSL -o "/tmp/${PROTON_NAME}.sha512sum" "${PROTON_SHA512_URL}"
+cd /tmp
+sha512sum -c "${PROTON_NAME}.sha512sum"
+
+PROTON_DIR="${STEAM_HOME}/compatibilitytools.d"
+mkdir -p "${PROTON_DIR}"
+tar -xJf "/tmp/${PROTON_TAR}" -C "${PROTON_DIR}/"
+# Missing runtime app makes Steam fall back to Proton 10.
+sed -i '/require_tool_appid/d' "${PROTON_DIR}/${PROTON_NAME}/toolmanifest.vdf"
+python3 /ctx/build_files/set-steam-default-compat.py "${STEAM_HOME}" "${PROTON_NAME}"
+rm -f "/tmp/${PROTON_TAR}" "/tmp/${PROTON_NAME}.sha512sum"
+
+echo "Pre-staged: ARM64 Steam bootstrap + CachyOS Proton 11 ${PROTON_VER}"

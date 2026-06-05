@@ -1,0 +1,85 @@
+---
+name: Build disk image
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Justfile'
+      - 'disk_config/**'
+      - 'post_process/**'
+      - 'vendor/**'
+      - '.github/workflows/build-disk.yml'
+
+env:
+  IMAGE_NAME: ${{ github.event.repository.name }}
+  IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
+  DEFAULT_TAG: "latest"
+  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder:latest"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build disk image
+    runs-on: ubuntu-24.04-arm
+
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    steps:
+      - name: Maximize build space
+        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        with:
+          remove-codeql: true
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install dependencies
+        run: |
+          set -euxo pipefail
+          echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> "${GITHUB_ENV}"
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "${GITHUB_ENV}"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            containernetworking-plugins \
+            curl \
+            jq \
+            just \
+            pigz \
+            podman \
+            python3
+
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          echo "${GH_TOKEN}" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build Armada image
+        run: |
+          set -euxo pipefail
+          just build-armada-image "${IMAGE_REGISTRY}/${IMAGE_NAME}" "${DEFAULT_TAG}"
+          IMG=$(find output -maxdepth 1 -name 'armada-*.img.gz' -type f -print -quit)
+          sha256sum "${IMG}" > "${IMG}.sha256"
+          ls -lh "${IMG}" "${IMG}.sha256"
+
+      - name: Upload disk image
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: |
+            output/armada-*.img.gz
+            output/armada-*.img.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: true

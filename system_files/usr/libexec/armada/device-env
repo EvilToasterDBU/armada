@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+
+device_dir=${ARMADA_DEVICE_DIR:-/usr/lib/armada/devices}
+
+source "$device_dir/defaults.conf"
+
+model=${ARMADA_MODEL:-}
+if [[ -z "$model" ]]; then
+    model=$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null || true)
+fi
+case "$model" in
+    "AYANEO Pocket EVO") profile=ayaneo-pocket-evo ;;
+    "AYN Odin 2") profile=ayn-odin-2 ;;
+    "AYN Odin 2 Mini") profile=ayn-odin-2-mini ;;
+    "AYN Odin 2 Portal") profile=ayn-odin-2-portal ;;
+    *) profile= ;;
+esac
+
+if [[ -n "$profile" && -r "$device_dir/$profile.conf" ]]; then
+    source "$device_dir/$profile.conf"
+fi
+
+vars=(
+    ARMADA_DEVICE_ID
+    ARMADA_DEVICE_NAME
+    ARMADA_PANEL_CONNECTOR
+    ARMADA_PANEL_TYPE
+    ARMADA_PANEL_ORIENTATION
+    ARMADA_PANEL_NATIVE_WIDTH
+    ARMADA_PANEL_NATIVE_HEIGHT
+    ARMADA_PANEL_REFRESH_RATES
+    ARMADA_GAMESCOPE_USE_ROTATION_SHADER
+    ARMADA_GAMESCOPE_FAKE_OUTPUT_MM
+    ARMADA_GAMEPAD_QUIRK
+    ARMADA_GPU_GAME_FLOOR_MHZ
+)
+
+for var in "${vars[@]}"; do
+    printf '%s=%q\n' "$var" "${!var:-}"
+done

@@ -1,0 +1,10 @@
+[Unit]
+Description=armada power profile applier (%I)
+RefuseManualStop=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/armada/power-control %I
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=no

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euxo pipefail
+
+cd /ctx/build_files
+
+./10-base-packages.sh
+./20-install-kernel.sh
+./30-install-steam-session.sh
+./40-vendor-system-files.sh
+./50-create-user.sh
+./60-set-default-target.sh
+./70-cleanup.sh
+./80-finalize-update-state.sh
