@@ -2,6 +2,7 @@ ARG FEX_PKG=ghcr.io/virtudude/armada-packages/fex@sha256:5ac08826823c1228e5d2568
 ARG MESA_PKG=ghcr.io/virtudude/armada-packages/mesa@sha256:1b5bb7dec2d5cbcdbd3f895d3cdb6751c6a3a508b1fcc40e30cf83ad72229bcb
 ARG MANGOHUD_PKG=ghcr.io/virtudude/armada-packages/mangohud@sha256:583278eb4f9b55f6ee25bc1040ad8066d897e75b947ec8f2c73e01a360368e0c
 ARG GAMESCOPE_PKG=ghcr.io/virtudude/armada-packages/gamescope@sha256:d5f2b5ab57ef94e86b58dfbbe9b5ed6e92c20db1732d9a79b466f82dd31fde92
+ARG POWERDEVIL_PKG=ghcr.io/virtudude/armada-packages/powerdevil@sha256:996937f85b561eccfd006ac1c5e7dbd0a0a1b21846ca518fdb5938c215878d81
 ARG KERNEL_PKG=ghcr.io/virtudude/armada-packages/kernel@sha256:6c47e935e1d3ef1a3d7059c2a81b96b8db11868dc19a3a4062e1bf850559af71
 ARG INPUTPLUMBER_PKG=ghcr.io/virtudude/armada-packages/inputplumber@sha256:a09eb3ec26be622b05b4cbe32c01570478b742e33fcc610790b57d3c4d05bd52
 ARG EXTEST_PKG=ghcr.io/virtudude/armada-packages/extest@sha256:a9396ff10ebf647b1a20782e308a7c05d7e0511c7479b4305969e3bdd03c3dd5
@@ -12,6 +13,7 @@ FROM ${FEX_PKG} AS fex
 FROM ${MESA_PKG} AS mesa
 FROM ${MANGOHUD_PKG} AS mangohud
 FROM ${GAMESCOPE_PKG} AS gamescope
+FROM ${POWERDEVIL_PKG} AS powerdevil
 FROM ${KERNEL_PKG} AS kernel
 FROM ${INPUTPLUMBER_PKG} AS inputplumber
 FROM ${NETWORKMANAGER_PKG} AS networkmanager
@@ -39,6 +41,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=mesa,source=/rpms,target=/packages/mesa \
     --mount=type=bind,from=mangohud,source=/rpms,target=/packages/mangohud \
     --mount=type=bind,from=gamescope,source=/rpms,target=/packages/gamescope \
+    --mount=type=bind,from=powerdevil,source=/rpms,target=/packages/powerdevil \
     --mount=type=bind,from=kernel,source=/kernel,target=/packages/kernel \
     --mount=type=bind,from=inputplumber,source=/rpms,target=/packages/inputplumber \
     --mount=type=bind,from=networkmanager,source=/rpms,target=/packages/networkmanager \
