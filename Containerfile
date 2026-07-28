@@ -1,5 +1,6 @@
 ARG FEX_PKG=ghcr.io/virtudude/armada-packages/fex@sha256:5ac08826823c1228e5d25681c0508b79b01ff301e8c32d2cd5bbe72687615e7a
 ARG MESA_PKG=ghcr.io/virtudude/armada-packages/mesa@sha256:1b5bb7dec2d5cbcdbd3f895d3cdb6751c6a3a508b1fcc40e30cf83ad72229bcb
+ARG MESA_ANDROID_PKG=ghcr.io/virtudude/armada-packages/mesa-android:latest
 ARG MANGOHUD_PKG=ghcr.io/virtudude/armada-packages/mangohud@sha256:583278eb4f9b55f6ee25bc1040ad8066d897e75b947ec8f2c73e01a360368e0c
 ARG GAMESCOPE_PKG=ghcr.io/virtudude/armada-packages/gamescope@sha256:d5f2b5ab57ef94e86b58dfbbe9b5ed6e92c20db1732d9a79b466f82dd31fde92
 ARG POWERDEVIL_PKG=ghcr.io/virtudude/armada-packages/powerdevil@sha256:996937f85b561eccfd006ac1c5e7dbd0a0a1b21846ca518fdb5938c215878d81
@@ -18,6 +19,7 @@ FROM ${KERNEL_PKG} AS kernel
 FROM ${INPUTPLUMBER_PKG} AS inputplumber
 FROM ${NETWORKMANAGER_PKG} AS networkmanager
 FROM ${JUPITER_HW_SUPPORT_PKG} AS jupiter-hw-support
+FROM ${MESA_ANDROID_PKG} AS mesa-android
 FROM ${EXTEST_PKG} AS extest
 
 FROM docker.io/library/node:22-slim AS decky-build
@@ -46,6 +48,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=inputplumber,source=/rpms,target=/packages/inputplumber \
     --mount=type=bind,from=networkmanager,source=/rpms,target=/packages/networkmanager \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
+    --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
     --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
     --mount=type=cache,dst=/var/cache \

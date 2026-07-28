@@ -3,6 +3,7 @@ set -euxo pipefail
 
 cp -a /ctx/system_files/. /
 install -Dpm 0755 /packages/extest/libextest.so /usr/lib/extest/libextest.so
+cp -a /packages/mesa-android/waydroid/vendor /usr/share/armada/waydroid/
 
 # mkbootimg must be present for on-device /KERNEL rebuilds after OTA.
 install -Dpm 0755 /ctx/build_files/vendor/mkbootimg/mkbootimg.py /usr/libexec/armada/mkbootimg.py
