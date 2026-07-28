@@ -67,7 +67,6 @@ def status():
     for key in (
         "profile",
         "default_profile",
-        "scheduler_mode",
         "cpu_underclock",
         "cpu_caps",
         "gpu_level",

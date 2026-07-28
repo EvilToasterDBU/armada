@@ -1,7 +1,5 @@
 [Unit]
 Description=armada power policy daemon
-Wants=armada-scx.service
-After=armada-scx.service
 StartLimitIntervalSec=0
 
 [Service]
