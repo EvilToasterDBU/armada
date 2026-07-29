@@ -1,5 +1,5 @@
 ARG FEX_PKG=ghcr.io/virtudude/armada-packages/fex@sha256:5ac08826823c1228e5d25681c0508b79b01ff301e8c32d2cd5bbe72687615e7a
-ARG MESA_PKG=ghcr.io/virtudude/armada-packages/mesa@sha256:1b5bb7dec2d5cbcdbd3f895d3cdb6751c6a3a508b1fcc40e30cf83ad72229bcb
+ARG MESA_PKG=ghcr.io/virtudude/armada-packages/mesa@sha256:ad9144785f6ae3994cb16fec4bd0facb5c3520606cb3fb637ad11c9d42b17769
 ARG MESA_ANDROID_PKG=ghcr.io/virtudude/armada-packages/mesa-android:latest
 ARG MANGOHUD_PKG=ghcr.io/virtudude/armada-packages/mangohud@sha256:583278eb4f9b55f6ee25bc1040ad8066d897e75b947ec8f2c73e01a360368e0c
 ARG GAMESCOPE_PKG=ghcr.io/virtudude/armada-packages/gamescope@sha256:d5f2b5ab57ef94e86b58dfbbe9b5ed6e92c20db1732d9a79b466f82dd31fde92
