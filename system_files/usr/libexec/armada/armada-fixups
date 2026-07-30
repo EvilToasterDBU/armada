@@ -9,12 +9,32 @@ STEAM_CONFIGS = (
     pathlib.Path("/var/home/armada/.local/share/Steam/config/config.vdf"),
     pathlib.Path("/var/home/armada/.steam/root/config/config.vdf"),
 )
+HOME_DIR = pathlib.Path("/var/home/armada")
+DESKTOP_DIR = HOME_DIR / "Desktop"
 
 PROTON_11_VERSIONED = re.compile(r"proton-cachyos-11\.0-[^\"\s]+-arm64")
 # Keep this in sync with PROTON_TOOL_NAME when changing Proton major/minor lines.
 PROTON_11_STABLE = "proton-cachyos-11.0-arm64"
 
 FIXUP_STATE_DIR = pathlib.Path("/var/lib/armada/fixups")
+
+
+def fix_desktop_ownership():
+    try:
+        home_stat = HOME_DIR.stat()
+        desktop_stat = DESKTOP_DIR.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISDIR(desktop_stat.st_mode):
+        return
+    owner = (home_stat.st_uid, home_stat.st_gid)
+    if (desktop_stat.st_uid, desktop_stat.st_gid) == owner:
+        return
+    try:
+        os.chown(DESKTOP_DIR, *owner, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    print("Corrected Desktop directory ownership")
 
 
 def rewrite_file(path, pattern, replacement):
@@ -123,6 +143,7 @@ def strip_compat_wildcard():
 
 
 def main():
+    fix_desktop_ownership()
     fix_proton_11_tool_id()
     strip_compat_wildcard()
 
