@@ -17,7 +17,7 @@ depends() {
 install() {
     inst_multiple \
         /usr/libexec/armada/armada-splash \
-        /usr/libexec/armada/armada-splash-fb \
+        /usr/libexec/armada/armada-splash-launcher \
         /usr/libexec/armada/device-env \
         /usr/share/armada/splash/splash.asp \
         /usr/share/armada/splash/font.ttf \

@@ -20,13 +20,13 @@ dracut \
     "${IMG}" "${KVER}"
 
 # dracut drops modules silently: fail the build rather than ship without.
-# Exact match: a substring test lets armada-splash-fb pass for the binary.
+# Exact match: a substring test lets armada-splash-launcher pass for the binary.
 contents="$(lsinitrd "${IMG}")"
 for required in \
     usr/lib/systemd/system/armada-splash-initrd.service \
     usr/lib/systemd/system/dracut-pre-mount.service.d/armada-splash.conf \
     usr/libexec/armada/armada-splash \
-    usr/libexec/armada/armada-splash-fb \
+    usr/libexec/armada/armada-splash-launcher \
     usr/libexec/armada/device-env \
     usr/share/armada/splash/splash.asp \
     usr/lib/ostree/ostree-prepare-root; do

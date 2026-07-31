@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# Framebuffer splash launcher for the boot and shutdown screens.
+# Splash launcher (KMS, fbdev fallback) for the boot and shutdown screens.
 set -u
 
 # Hide the VT cursor and clear buffered console text (e.g. a wall broadcast):
@@ -32,7 +32,17 @@ for ((i = 0; i < 100; i++)); do
     sleep 0.1
 done
 
-exec /usr/libexec/armada/armada-splash --backend fbdev --rotate "$rot" --keep-vt \
+# KMS on the primary connector: panel-native geometry, other panels off; the
+# binary falls back to fbdev when drm is unavailable.
+backend=(--backend fbdev)
+[[ -n "${ARMADA_PRIMARY_CONNECTOR:-}" ]] && backend=(--backend drm --connector "$ARMADA_PRIMARY_CONNECTOR")
+
+# In the initramfs, survive switch-root (argv[0] '@' storage-daemon
+# convention): one drawer owns the sail from first paint to session takeover.
+argv0=armada-splash
+[[ -e /etc/initrd-release ]] && { argv0=@armada-splash; exec 2>>/run/armada/drawer.log; }
+
+exec -a "$argv0" /usr/libexec/armada/armada-splash "${backend[@]}" --rotate "$rot" --keep-vt \
     --image /usr/share/armada/splash/splash.asp \
     --status /run/armada/splash/status \
     --font /usr/share/armada/splash/font.ttf

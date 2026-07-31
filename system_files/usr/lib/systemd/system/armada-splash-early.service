@@ -10,7 +10,7 @@ ConditionPathExists=!/etc/armada/splash-disabled
 
 [Service]
 ExecStartPre=/usr/libexec/armada/armada-splash-progress Starting Armada...
-ExecStart=/usr/libexec/armada/armada-splash-fb
+ExecStart=/usr/libexec/armada/armada-splash-launcher
 
 [Install]
 WantedBy=sysinit.target

@@ -8,7 +8,7 @@ ConditionPathExists=!/etc/armada/splash-disabled
 
 [Service]
 ExecStartPre=/usr/libexec/armada/armada-splash-shutdown-msg Restarting...
-ExecStart=/usr/libexec/armada/armada-splash-fb
+ExecStart=/usr/libexec/armada/armada-splash-launcher
 
 [Install]
 WantedBy=reboot.target
