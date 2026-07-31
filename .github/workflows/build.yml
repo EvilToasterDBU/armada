@@ -205,13 +205,15 @@ jobs:
               "${IMAGE_REF}"
           fi
 
-          cosign verify --key system_files/etc/pki/containers/armada.pub "${IMAGE_REF}"
-          if [ "${IMAGE_FULL}" = "${ARMADA_LEGACY_IMAGE}" ]; then
-            cosign verify --check-claims=false \
-              --key system_files/etc/pki/containers/armada.pub \
-              "${IMAGE_REF}" |
-              jq -s -e --arg identity "${ARMADA_CANONICAL_IMAGE}" \
-                'any(.. | objects; .critical?.identity?["docker-reference"]? == $identity)'
+          if [ "${{ github.event.repository.fork }}" != "true" ]; then
+            cosign verify --key system_files/etc/pki/containers/armada.pub "${IMAGE_REF}"
+            if [ "${IMAGE_FULL}" = "${ARMADA_LEGACY_IMAGE}" ]; then
+              cosign verify --check-claims=false \
+                --key system_files/etc/pki/containers/armada.pub \
+                "${IMAGE_REF}" |
+                jq -s -e --arg identity "${ARMADA_CANONICAL_IMAGE}" \
+                  'any(.. | objects; .critical?.identity?["docker-reference"]? == $identity)'
+            fi
           fi
         env:
           HAVE_SIGNING_SECRET: ${{ secrets.SIGNING_SECRET != '' }}
