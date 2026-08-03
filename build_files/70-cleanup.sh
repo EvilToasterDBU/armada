@@ -38,6 +38,7 @@ fi
 
 for package in \
     armada-jupiter-hw-support \
+    armada-splash \
     fex-emu-utils \
     gamescope \
     inputplumber \

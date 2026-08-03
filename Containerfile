@@ -55,7 +55,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
-    --mount=type=bind,from=armada-splash,source=/,target=/packages/armada-splash \
+    --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
     --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
