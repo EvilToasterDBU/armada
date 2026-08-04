@@ -140,6 +140,7 @@ jobs:
 
       - name: Rechunk for small OTA deltas
         id: rechunk
+        if: github.event_name != 'pull_request'
         run: |
           set -euxo pipefail
           # Ubuntu 24.04 blocks the unprivileged user namespaces rootless skopeo needs.
