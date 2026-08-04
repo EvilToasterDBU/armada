@@ -8,7 +8,7 @@ dnf5 -y install --setopt=install_weak_deps=False /packages/mesa/mesa-*.fc44.arma
 dnf5 -y install --setopt=install_weak_deps=False /packages/mangohud/mangohud-*.fc44.armada.*.rpm
 
 dnf5 -y install --setopt=install_weak_deps=False \
-    /packages/gamescope/terra-gamescope-[0-9]*.aarch64.rpm \
+    /packages/gamescope/terra-gamescope{,-libs}-[0-9]*.aarch64.rpm \
     vulkan-loader \
     vulkan-tools \
     gamemode \
