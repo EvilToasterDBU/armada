@@ -3,7 +3,6 @@ set -euxo pipefail
 
 cp -a /ctx/system_files/. /
 install -Dpm 0755 /packages/extest/libextest.so /usr/lib/extest/libextest.so
-install -Dpm 0755 /packages/armada-splash/armada-splash /usr/libexec/armada/armada-splash
 
 cp -a /packages/mesa-android/waydroid/vendor /usr/share/armada/waydroid/
 
