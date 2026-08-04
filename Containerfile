@@ -5,12 +5,12 @@ ARG MANGOHUD_PKG=ghcr.io/armada-os/armada-packages/mangohud@sha256:6ed92b44d267a
 ARG GAMESCOPE_PKG=ghcr.io/armada-os/armada-packages/gamescope@sha256:5c8896b2ef14b75e9e887bcea4a3ffd6d046bf9fe6e1a4133812880a76744a1d
 ARG GAMESCOPE_SESSION_PKG=ghcr.io/armada-os/armada-packages/gamescope-session@sha256:d44de289a54eb6d7b2af9b0505fc7580106dbe62318edd4a9a3afd3383351fc8
 ARG POWERDEVIL_PKG=ghcr.io/armada-os/armada-packages/powerdevil@sha256:f6d25143dca84f5f71076a3c992e06de87f7ae25fd046cfeb21999df989c4f8b
-ARG KERNEL_PKG=ghcr.io/armada-os/armada-packages/kernel@sha256:aa5b9a46c780f32552e8c9c038825d035b02970c2be0aab502c6c8d9bdfb1460
+ARG KERNEL_PKG=ghcr.io/armada-os/armada-packages/kernel@sha256:202eb3ee7c8265a0e08a6792cac0aa753ed1bf2a64aa0bffe6732c6f97994517
 ARG INPUTPLUMBER_PKG=ghcr.io/armada-os/armada-packages/inputplumber@sha256:1369b521b95af6b34b434ac930889faea6e1d18f0a4922a7e90bcb6837da1ad7
 ARG EXTEST_PKG=ghcr.io/armada-os/armada-packages/extest@sha256:c68bd452dd8f9a20527862e87fd446045b86811dc222a2a1744ede8d8b858dfa
 ARG NETWORKMANAGER_PKG=ghcr.io/armada-os/armada-packages/networkmanager@sha256:043eae7f6f236945bc66466337391384949f56ad19807f21fe2e9b6f5c488b5f
 ARG JUPITER_HW_SUPPORT_PKG=ghcr.io/armada-os/armada-packages/jupiter-hw-support@sha256:9bb3b94ced508eccb11ae4ed98b00657c202bf78ad797bf6ece345d1ec19b552
-ARG ARMADA_SPLASH_PKG=ghcr.io/armada-os/armada-packages/armada-splash@sha256:d4a42ed2e876b5b5091e75bd70f5c86ecc701291f251e70ecd047858922be90a
+ARG ARMADA_SPLASH_PKG=ghcr.io/armada-os/armada-packages/armada-splash@sha256:2425356403d2826fdaaa0f73ae350d09bcae08c26bb9e087268c2221cd965098
 
 FROM ${FEX_PKG} AS fex
 FROM ${MESA_PKG} AS mesa
@@ -55,7 +55,7 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=jupiter-hw-support,source=/rpms,target=/packages/jupiter-hw-support \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
-    --mount=type=bind,from=armada-splash,source=/,target=/packages/armada-splash \
+    --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
     --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
