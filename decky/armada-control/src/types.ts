@@ -70,12 +70,20 @@ export interface GameRef {
   name: string;
 }
 
+export interface PerfInfo {
+  governors: string[];
+  schedulers: string[];
+  corePresets: DropdownChoice[];
+  cpuCount: number;
+}
+
 export interface Config {
   power: PowerConfig;
   powerDefaults: PowerConfig;
   tweaks: Tweaks;
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
+  perf?: PerfInfo;
   cpuDeviceClass: string;
   osVersion: string;
   ablVersion: string;
