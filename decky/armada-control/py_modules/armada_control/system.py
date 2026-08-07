@@ -116,3 +116,7 @@ def perf_info():
 
 def reapply_perf():
     return call("reapply_perf")
+
+
+def restart_game_mode():
+    return bool(call("restart_game_mode").get("ok"))

@@ -14,7 +14,7 @@ import {
 } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { reapplyPerf, saveCompatApplied, saveTweaks } from "../backend";
+import { reapplyPerf, restartGameMode, saveCompatApplied, saveTweaks } from "../backend";
 import { SelectEdit, SliderEdit } from "../components/widgets";
 import { getGlobalResolution, setGlobalResolution } from "../lib/steamSettings";
 import { clone } from "../lib/util";
@@ -33,7 +33,7 @@ import {
   resetCompatToolToDefault,
   resetLaunchOptionsForGame,
   resolveCompatState,
-  resolveGameAppids,
+  resolveProfileAppids,
   setAutoApplyCompat,
   setWindowsCompatTool,
   specifyCompatTool,
@@ -127,6 +127,30 @@ function ConfirmResetGameModal({
   );
 }
 
+function ConfirmGameModeRestartModal({
+  closeModal,
+  onRestart,
+}: {
+  closeModal?: () => void;
+  onRestart: () => void;
+}) {
+  const restart = () => {
+    closeModal?.();
+    onRestart();
+  };
+  return (
+    <ModalRoot onCancel={closeModal}>
+      <DialogBody>
+        Gamescope must restart before this change takes effect. This closes any running game and restarts Steam.
+      </DialogBody>
+      <DialogFooter>
+        <DialogButton onClick={restart}>Restart Game Mode</DialogButton>
+        <DialogButton onClick={closeModal}>Later</DialogButton>
+      </DialogFooter>
+    </ModalRoot>
+  );
+}
+
 function EnvVarModal({
   closeModal,
   initialKey,
@@ -207,6 +231,8 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
   const selectedAppidRef = useRef("");
   selectedAppidRef.current = game?.appid || "";
   const tweaks = config.tweaks;
+  const tweaksRef = useRef(tweaks);
+  tweaksRef.current = tweaks;
   const apps = window.SteamClient?.Apps;
   const persistHandledGames = () => saveCompatApplied(handledGameAppids()).catch(() => {});
   useEffect(() => {
@@ -374,7 +400,7 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       return next;
     });
     try {
-      const gameAppids = await resolveGameAppids(games.map((installed) => installed.appid));
+      const gameAppids = await resolveProfileAppids(games.map((installed) => installed.appid));
       let nextResolution = 0;
       const resetResolution = async () => {
         while (nextResolution < gameAppids.length) {
@@ -434,7 +460,11 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
     setGlobalTool(name);
     setWindowsCompatTool(name);
     patchSettings({ windowsCompatTool: name });
-    await migrateWindowsCompatTool(config.installedGames.map((installed) => installed.appid), oldTool, name);
+    await migrateWindowsCompatTool(
+      config.installedGames.filter((installed) => !installed.nonSteam).map((installed) => installed.appid),
+      oldTool,
+      name,
+    );
     persistHandledGames();
   };
   const selectableTools = new Map<string, CompatTool>();
@@ -457,8 +487,10 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
         : selection;
     try {
       await specifyCompatTool(game.appid, target);
-      markCompatHandled(game.appid);
-      persistHandledGames();
+      if (!game.nonSteam) {
+        markCompatHandled(game.appid);
+        persistHandledGames();
+      }
       setCurrentTool(selection);
     } catch (error) {
     }
@@ -567,9 +599,33 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       setReapplyStatus(String(error));
     }
   };
+  const restartWithTweaks = async () => {
+    setReapplyStatus("Restarting Game Mode...");
+    try {
+      await saveTweaks(tweaksRef.current);
+      await restartGameMode();
+    } catch (error) {
+      setReapplyStatus(`Restart failed: ${String(error)}`);
+    }
+  };
+  const setGamescopeVulkanRealtime = (on: boolean) => {
+    setConfig((current) => {
+      if (!current) return current;
+      const nextTweaks = clone(current.tweaks);
+      if (on) nextTweaks.global.gamescopeVulkanRealtime = true;
+      else delete nextTweaks.global.gamescopeVulkanRealtime;
+      return { ...current, tweaks: nextTweaks };
+    });
+    showModal(
+      <ConfirmGameModeRestartModal
+        onRestart={() => { void restartWithTweaks(); }}
+      />,
+    );
+  };
   const perfControls = (
     <>
-      <SelectEdit label="Game CPU Cores" value={coresIsCustom ? "custom" : coresValue} options={coreOptions} onChange={onSelectCores} />
+      <div className="armada-subheader">Game</div>
+      <SelectEdit label="CPU Cores" value={coresIsCustom ? "custom" : coresValue} options={coreOptions} onChange={onSelectCores} />
       {coresIsCustom ? (
         <PanelSectionRow>
           <TextField
@@ -592,9 +648,10 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
           onChange={(on) => patchSettings({ wineTopology: on ? (!editingDefault && tweaks.global.wineTopology === false ? true : undefined) : false })}
         />
       ) : null}
-      <SliderEdit label="Game Nice" value={values.nice ?? 0} min={-20} max={19} step={1} onChange={(v) => patchSettings({ nice: v !== 0 ? v : !editingDefault && tweaks.global.nice ? 0 : undefined })} />
+      <SliderEdit label="Nice" value={values.nice ?? 0} min={-20} max={19} step={1} onChange={(v) => patchSettings({ nice: v !== 0 ? v : !editingDefault && tweaks.global.nice ? 0 : undefined })} />
+      <div className="armada-subheader">Gamescope</div>
       <SelectEdit
-        label="Gamescope CPU Cores"
+        label="CPU Cores"
         value={gsCoresIsCustom ? "custom" : gsCoresValue}
         options={gamescopeCoreOptions}
         onChange={(choice) => {
@@ -610,7 +667,7 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       {gsCoresIsCustom ? (
         <PanelSectionRow>
           <TextField
-            label="Custom gamescope cores"
+            label="Custom cores"
             value={gsCoresText}
             onChange={(event) => {
               const text = event.target.value;
@@ -621,12 +678,20 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
         </PanelSectionRow>
       ) : null}
       {gsCoresError && gsCoresText ? <div className="armada-field-note">{gsCoresError}</div> : null}
-      <SliderEdit label="Gamescope Nice" value={values.gamescopeNice ?? 0} min={-20} max={19} step={1} onChange={(v) => patchSettings({ gamescopeNice: v !== 0 ? v : !editingDefault && tweaks.global.gamescopeNice ? 0 : undefined })} />
+      <SliderEdit label="Nice" value={values.gamescopeNice ?? 0} min={-20} max={19} step={1} onChange={(v) => patchSettings({ gamescopeNice: v !== 0 ? v : !editingDefault && tweaks.global.gamescopeNice ? 0 : undefined })} />
       <ToggleField
-        label="Gamescope Realtime (RR)"
+        label="CPU Realtime Scheduling"
         checked={!!values.gamescopeRr}
         onChange={(on) => patchSettings({ gamescopeRr: on ? true : tweaks.global.gamescopeRr ? false : undefined })}
       />
+      {editingDefault ? (
+        <ToggleField
+          label="Vulkan Realtime Queue"
+          checked={!!tweaks.global.gamescopeVulkanRealtime}
+          onChange={setGamescopeVulkanRealtime}
+        />
+      ) : null}
+      <div className="armada-subheader">System</div>
       <SelectEdit
         label="CPU Scheduler"
         value={String(values.scheduler ?? "")}

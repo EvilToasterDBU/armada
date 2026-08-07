@@ -351,6 +351,11 @@ def action_reapply_perf(request):
     return PERF.reapply()
 
 
+def action_restart_game_mode(request):
+    run(["/usr/bin/systemctl", "--no-block", "restart", "sddm.service"])
+    return {"ok": True}
+
+
 ACTIONS = {
     "set_controller_type": action_set_controller_type,
     "get_controller_type": action_get_controller_type,
@@ -361,6 +366,7 @@ ACTIONS = {
     "set_ssh_enabled": action_set_ssh_enabled,
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
+    "restart_game_mode": action_restart_game_mode,
 }
 
 

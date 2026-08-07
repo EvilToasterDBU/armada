@@ -38,6 +38,7 @@ export interface Tweaks {
 export interface InstalledGame {
   appid: string;
   name: string;
+  nonSteam?: boolean;
 }
 
 export interface FexProfile {
@@ -68,6 +69,7 @@ export interface CalibrationState {
 export interface GameRef {
   appid: string;
   name: string;
+  nonSteam?: boolean;
 }
 
 export interface PerfInfo {
