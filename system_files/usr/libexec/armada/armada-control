@@ -94,6 +94,18 @@ def ssh_enabled():
     return result.stdout.strip() == "active"
 
 
+def mtp_enabled():
+    result = subprocess.run(
+        ["/usr/bin/systemctl", "is-active", "armada-mtp.service"],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=5,
+    )
+    return result.stdout.strip() == "active"
+
+
 def device_env():
     result = subprocess.check_output(["/usr/libexec/armada/device-env"], text=True, timeout=5)
     env = {}
@@ -152,6 +164,25 @@ def action_set_ssh_enabled(request):
 
 def action_get_ssh_enabled(request):
     return {"enabled": ssh_enabled()}
+
+
+def action_set_mtp_enabled(request):
+    enabled = bool(request.get("enabled"))
+    action = "start" if enabled else "stop"
+    try:
+        run(["/usr/bin/systemctl", action, "armada-mtp.service"], timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        if enabled:
+            try:
+                run(["/usr/bin/systemctl", "stop", "armada-mtp.service"], timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        raise
+    return {"enabled": mtp_enabled()}
+
+
+def action_get_mtp_enabled(request):
+    return {"enabled": mtp_enabled()}
 
 
 def action_get_device_env(request):
@@ -362,8 +393,10 @@ ACTIONS = {
     "get_device_env": action_get_device_env,
     "get_abl_version": action_get_abl_version,
     "get_ssh_enabled": action_get_ssh_enabled,
+    "get_mtp_enabled": action_get_mtp_enabled,
     "inputplumber_intercept": action_inputplumber_intercept,
     "set_ssh_enabled": action_set_ssh_enabled,
+    "set_mtp_enabled": action_set_mtp_enabled,
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
     "restart_game_mode": action_restart_game_mode,

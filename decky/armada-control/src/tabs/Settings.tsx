@@ -1,6 +1,6 @@
 import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import type { Dispatch, SetStateAction } from "react";
-import { setControllerType as applyControllerType, setSshEnabled as applySshEnabled } from "../backend";
+import { setControllerType as applyControllerType, setMtpEnabled as applyMtpEnabled, setSshEnabled as applySshEnabled } from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { SelectEdit, ToggleRow } from "../components/widgets";
 import type { Config } from "../types";
@@ -19,6 +19,18 @@ export function Settings({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, sshEnabled: applied } : current));
     } catch (error) {
       setConfig((current) => (current ? { ...current, sshEnabled: !enabled } : current));
+    }
+  };
+  const setMtpEnabled = async (enabled: boolean) => {
+    if (enabled === !!config.mtpEnabled) {
+      return;
+    }
+    setConfig((current) => (current ? { ...current, mtpEnabled: enabled } : current));
+    try {
+      const applied = await applyMtpEnabled(enabled);
+      setConfig((current) => (current ? { ...current, mtpEnabled: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, mtpEnabled: !enabled } : current));
     }
   };
   const setControllerType = async (value: string) => {
@@ -46,6 +58,14 @@ export function Settings({ config, setConfig }: {
         <ToggleRow label="Enable SSH" value={!!config.sshEnabled} onChange={setSshEnabled} />
         <Field label="OS Version" description={config.osVersion || "unknown"} />
         <Field label="ABL Version" description={config.ablVersion || "unknown"} />
+      </PanelSection>
+      <PanelSection title="Experimental">
+        <ToggleRow
+          label="USB File Transfer"
+          description={config.mtpEnabled ? "Enabled until shutdown" : undefined}
+          value={!!config.mtpEnabled}
+          onChange={setMtpEnabled}
+        />
       </PanelSection>
     </>
   );

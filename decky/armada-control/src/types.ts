@@ -90,6 +90,7 @@ export interface Config {
   osVersion: string;
   ablVersion: string;
   sshEnabled: boolean;
+  mtpEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];
   calibration?: CalibrationState;
