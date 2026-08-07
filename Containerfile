@@ -29,10 +29,15 @@ FROM ${EXTEST_PKG} AS extest
 FROM ${ARMADA_SPLASH_PKG} AS armada-splash
 
 FROM docker.io/library/node:22-slim AS decky-build
-WORKDIR /build
+WORKDIR /build/armada-control
 COPY decky/armada-control/package.json decky/armada-control/package-lock.json ./
 RUN npm ci
 COPY decky/armada-control/ ./
+RUN npm run build
+WORKDIR /build/armada-store
+COPY decky/armada-store/package.json decky/armada-store/package-lock.json ./
+RUN npm ci
+COPY decky/armada-store/ ./
 RUN npm run build
 
 FROM scratch AS ctx
@@ -60,7 +65,8 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
     --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
-    --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
+    --mount=type=bind,from=decky-build,source=/build/armada-control/dist,target=/packages/decky-dist \
+    --mount=type=bind,from=decky-build,source=/build/armada-store/dist,target=/packages/decky-store-dist \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
