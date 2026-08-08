@@ -51,10 +51,6 @@ Includes:
 
 | Device | SoC | Status |
 |---|---|---|
-| Retroid Pocket 5 | SM8250 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
-| Retroid Pocket Flip 2 | SM8250 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
-| Retroid Pocket Mini | SM8250 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
-| Retroid Pocket Mini V2 | SM8250 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
 | Retroid Pocket Nova | SM8550 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
 | KONKR Pocket FIT Elite | SM8750 | [Pre-release](https://github.com/armada-os/armada/releases/tag/20260806) |
 
