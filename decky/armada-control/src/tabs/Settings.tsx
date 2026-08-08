@@ -1,6 +1,11 @@
 import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import type { Dispatch, SetStateAction } from "react";
-import { setControllerType as applyControllerType, setMtpEnabled as applyMtpEnabled, setSshEnabled as applySshEnabled } from "../backend";
+import {
+  setAblAutoEnabled as applyAblAutoEnabled,
+  setControllerType as applyControllerType,
+  setMtpEnabled as applyMtpEnabled,
+  setSshEnabled as applySshEnabled,
+} from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { SelectEdit, ToggleRow } from "../components/widgets";
 import type { Config } from "../types";
@@ -43,6 +48,18 @@ export function Settings({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, controllerType: previous } : current));
     }
   };
+  const setAblAutoEnabled = async (enabled: boolean) => {
+    if (enabled === !!config.ablAutoEnabled) {
+      return;
+    }
+    setConfig((current) => (current ? { ...current, ablAutoEnabled: enabled } : current));
+    try {
+      const applied = await applyAblAutoEnabled(enabled);
+      setConfig((current) => (current ? { ...current, ablAutoEnabled: applied } : current));
+    } catch (error) {
+      setConfig((current) => (current ? { ...current, ablAutoEnabled: !enabled } : current));
+    }
+  };
   return (
     <>
       <PanelSection title="Controller">
@@ -65,6 +82,12 @@ export function Settings({ config, setConfig }: {
           description={config.mtpEnabled ? "Enabled until shutdown" : undefined}
           value={!!config.mtpEnabled}
           onChange={setMtpEnabled}
+        />
+        <ToggleRow
+          label="Automatic ABL Updates"
+          description="Updates during shutdown"
+          value={!!config.ablAutoEnabled}
+          onChange={setAblAutoEnabled}
         />
       </PanelSection>
     </>
