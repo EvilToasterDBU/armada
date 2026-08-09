@@ -54,7 +54,8 @@ dnf5 -y install --setopt=install_weak_deps=False \
     qt6-qttools \
     qt6-qtvirtualkeyboard \
     zenity \
-    seatd
+    seatd \
+    distrobox
 
 dnf5 -y install --setopt=install_weak_deps=False \
     /packages/umtp-responder/umtp-responder-*.rpm
