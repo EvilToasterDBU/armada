@@ -146,7 +146,7 @@
       "name": "Xenia Edge",
       "summary": "Xbox 360",
       "category": "emulation",
-      "icon": "https://github.com/has207.png",
+      "icon": "https://raw.githubusercontent.com/xenia-canary/xenia-canary/canary_experimental/assets/icon/32.png",
       "note": "x86_64 build; runs through FEX",
       "install": {
         "type": "appimage",
