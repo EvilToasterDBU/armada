@@ -38,6 +38,7 @@ export interface Tweaks {
 export interface InstalledGame {
   appid: string;
   name: string;
+  nonSteam?: boolean;
 }
 
 export interface FexProfile {
@@ -68,6 +69,7 @@ export interface CalibrationState {
 export interface GameRef {
   appid: string;
   name: string;
+  nonSteam?: boolean;
 }
 
 export interface PerfInfo {
@@ -87,7 +89,9 @@ export interface Config {
   cpuDeviceClass: string;
   osVersion: string;
   ablVersion: string;
+  ablAutoEnabled: boolean;
   sshEnabled: boolean;
+  mtpEnabled: boolean;
   controllerType: string;
   controllerTypes: DropdownChoice[];
   calibration?: CalibrationState;

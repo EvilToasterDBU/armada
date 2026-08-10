@@ -46,7 +46,8 @@ for package in \
     mangohud \
     mesa-vulkan-drivers \
     NetworkManager \
-    powerdevil; do
+    powerdevil \
+    umtp-responder; do
     case "$(rpm -q --qf '%{release}' "$package" 2>/dev/null)" in
         *armada*) ;;
         *) echo "ERROR: patched .armada package not installed: $package"; exit 1 ;;

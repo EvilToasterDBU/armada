@@ -14,6 +14,31 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+TWEAKS_FIXTURE="$WORK/game-tweaks.json"
+SESSION_FILE="$ROOT/system_files/etc/gamescope-session-plus/sessions.d/steam"
+SESSION_REALTIME_BLOCK="$(sed -n '/^_armada_tweaks_config=/,/^unset _armada_tweaks_config$/p' "$SESSION_FILE")"
+
+session_realtime_value() {
+    env -u GAMESCOPE_FORCE_VULKAN_REALTIME ARMADA_TWEAKS_CONFIG="$TWEAKS_FIXTURE" \
+        bash -c "$SESSION_REALTIME_BLOCK"$'\n''printf "%s" "${GAMESCOPE_FORCE_VULKAN_REALTIME:-}"'
+}
+
+printf '{"global":{"gamescopeVulkanRealtime":true}}\n' > "$TWEAKS_FIXTURE"
+[[ "$(session_realtime_value)" == 1 ]] || {
+    printf 'FAIL: enabled session setting did not export realtime queue request\n' >&2
+    exit 1
+}
+printf '{"global":{"gamescopeVulkanRealtime":false}}\n' > "$TWEAKS_FIXTURE"
+[[ -z "$(session_realtime_value)" ]] || {
+    printf 'FAIL: disabled session setting exported realtime queue request\n' >&2
+    exit 1
+}
+printf '{"global":{}}\n' > "$TWEAKS_FIXTURE"
+[[ -z "$(session_realtime_value)" ]] || {
+    printf 'FAIL: absent session setting exported realtime queue request\n' >&2
+    exit 1
+}
+
 python3 - "$ROOT" "$WORK" <<'PYEOF'
 import importlib.machinery
 import importlib.util
@@ -216,6 +241,16 @@ control = load_script("armada-control")
 ap.TWEAKS_CONFIG = ap.pathlib.Path(os.path.join(WORK, "game-tweaks.json"))
 ap.STATE_FILE = ap.pathlib.Path(os.path.join(WORK, "perf-state.json"))
 ap.device_env = lambda: dict(ENV)
+
+restart_calls = []
+real_control_run = control.run
+control.run = lambda command, timeout=20: restart_calls.append(command)
+try:
+    check("game mode restart action succeeds", control.action_restart_game_mode({}) == {"ok": True})
+    check("game mode restart requests sddm restart",
+          restart_calls == [["/usr/bin/systemctl", "--no-block", "restart", "sddm.service"]])
+finally:
+    control.run = real_control_run
 
 with ap.TWEAKS_CONFIG.open("w") as f:
     json.dump({"global": {"gamescopeNice": -5},

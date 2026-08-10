@@ -1,17 +1,18 @@
 ARG FEX_PKG=ghcr.io/armada-os/armada-packages/fex@sha256:7ad92a80e6698245ade709b4f357988dd1520aca25203f7d39659585f2b9948f
-ARG MESA_PKG=ghcr.io/armada-os/armada-packages/mesa@sha256:ae13f3753c69d6a27f61fe9e8fc6e10ea0418b4c51bcbf2e7815241d7e0c9745
-ARG MESA_ANDROID_PKG=ghcr.io/armada-os/armada-packages/mesa-android@sha256:a12f87ff69b9f58f4c0672924d622243d9c3dee505324358f2c52110b7f8f6dc
+ARG MESA_PKG=ghcr.io/armada-os/armada-packages/mesa@sha256:713eddabb61575b1d9fed5e1c63a7e4459447d34e21d3c0b95f307f9cf54d716
+ARG MESA_ANDROID_PKG=ghcr.io/armada-os/armada-packages/mesa-android@sha256:57b03a625ebdfa12d67210c9642f24f8389c22b319e86ab32715eedfd7ee963b
 ARG MANGOHUD_PKG=ghcr.io/armada-os/armada-packages/mangohud@sha256:6ed92b44d267a8d2e1339968b59c2679cfd30e81494d4990dcc2c92e0be4fc10
-ARG GAMESCOPE_PKG=ghcr.io/armada-os/armada-packages/gamescope@sha256:e8e4fadda15b597584c61cc790a887b63007727df88831319c937bc8adb4571e
+ARG GAMESCOPE_PKG=ghcr.io/armada-os/armada-packages/gamescope@sha256:b5e5b978b7d3afce55f03f790ba12ee88170fe6b58fac5163084634b0276f495
 ARG GAMESCOPE_SESSION_PKG=ghcr.io/armada-os/armada-packages/gamescope-session@sha256:d17006f02124427f91c70e3c841c7819ca1721ad1d4033659f3656a674f8ee35
 ARG KWIN_PKG=ghcr.io/armada-os/armada-packages/kwin@sha256:0f9bfcb4d0da4cab4a049cba7d90eb9936b3d4be610ceb00f25ec0f58d0dc812
 ARG POWERDEVIL_PKG=ghcr.io/armada-os/armada-packages/powerdevil@sha256:f6d25143dca84f5f71076a3c992e06de87f7ae25fd046cfeb21999df989c4f8b
-ARG KERNEL_PKG=ghcr.io/armada-os/armada-packages/kernel@sha256:ad007a45077e0c8b9aade0668635106f65fbc93873cb1fadfa24b853dab755ad
+ARG KERNEL_PKG=ghcr.io/armada-os/armada-packages/kernel@sha256:b4fc7cbbf2358b18348eaccfaca900d4b4257304baf7d8aadfa83b54c3f2c12e
 ARG INPUTPLUMBER_PKG=ghcr.io/armada-os/armada-packages/inputplumber@sha256:6196556fe04882547f16302763e3556b434e37e007b6f260d5f2e3f95fd43dea
 ARG EXTEST_PKG=ghcr.io/armada-os/armada-packages/extest@sha256:c68bd452dd8f9a20527862e87fd446045b86811dc222a2a1744ede8d8b858dfa
 ARG NETWORKMANAGER_PKG=ghcr.io/armada-os/armada-packages/networkmanager@sha256:043eae7f6f236945bc66466337391384949f56ad19807f21fe2e9b6f5c488b5f
 ARG JUPITER_HW_SUPPORT_PKG=ghcr.io/armada-os/armada-packages/jupiter-hw-support@sha256:9bb3b94ced508eccb11ae4ed98b00657c202bf78ad797bf6ece345d1ec19b552
-ARG ARMADA_SPLASH_PKG=ghcr.io/armada-os/armada-packages/armada-splash@sha256:2425356403d2826fdaaa0f73ae350d09bcae08c26bb9e087268c2221cd965098
+ARG ARMADA_SPLASH_PKG=ghcr.io/armada-os/armada-packages/armada-splash@sha256:43ead58a287ba41c7561e9b3fc628e7b4216d6356a8357b9b6509b906f2f251a
+ARG UMTP_RESPONDER_PKG=ghcr.io/armada-os/armada-packages/umtp-responder@sha256:b0fe59bf87bccdde7273d7ade9f824171a5b4ac5f132b4670b32a73bb1f871b3
 
 FROM ${FEX_PKG} AS fex
 FROM ${MESA_PKG} AS mesa
@@ -27,12 +28,18 @@ FROM ${JUPITER_HW_SUPPORT_PKG} AS jupiter-hw-support
 FROM ${MESA_ANDROID_PKG} AS mesa-android
 FROM ${EXTEST_PKG} AS extest
 FROM ${ARMADA_SPLASH_PKG} AS armada-splash
+FROM ${UMTP_RESPONDER_PKG} AS umtp-responder
 
 FROM docker.io/library/node:22-slim AS decky-build
-WORKDIR /build
+WORKDIR /build/armada-control
 COPY decky/armada-control/package.json decky/armada-control/package-lock.json ./
 RUN npm ci
 COPY decky/armada-control/ ./
+RUN npm run build
+WORKDIR /build/armada-store
+COPY decky/armada-store/package.json decky/armada-store/package-lock.json ./
+RUN npm ci
+COPY decky/armada-store/ ./
 RUN npm run build
 
 FROM scratch AS ctx
@@ -60,7 +67,9 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=bind,from=mesa-android,source=/,target=/packages/mesa-android \
     --mount=type=bind,from=extest,source=/,target=/packages/extest \
     --mount=type=bind,from=armada-splash,source=/rpms,target=/packages/armada-splash \
-    --mount=type=bind,from=decky-build,source=/build/dist,target=/packages/decky-dist \
+    --mount=type=bind,from=umtp-responder,source=/rpms,target=/packages/umtp-responder \
+    --mount=type=bind,from=decky-build,source=/build/armada-control/dist,target=/packages/decky-dist \
+    --mount=type=bind,from=decky-build,source=/build/armada-store/dist,target=/packages/decky-store-dist \
     --mount=type=cache,dst=/var/cache \
     --mount=type=cache,dst=/var/log \
     --mount=type=tmpfs,dst=/tmp \
